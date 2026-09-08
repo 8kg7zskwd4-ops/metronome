@@ -123,7 +123,7 @@
     font-size: clamp(64px, 18vw, 92px);
     font-weight: 650; letter-spacing: -0.045em;
     font-variant-numeric: tabular-nums;
-    width: 3.4ch; text-align: center; line-height: 1;
+    width: 4.2ch; min-width: 4.2ch; text-align: center; line-height: 1;
     user-select: text; -webkit-user-select: text;
     caret-color: var(--gold);
     transition: transform 70ms ease, color 70ms linear;
@@ -251,7 +251,7 @@
       <div class="lights" id="lights"></div>
       <div class="beat-num" id="beatNum">&nbsp;</div>
       <div class="bpm-wrap" id="bpmWrap">
-        <input id="bpm" type="number" min="30" max="300" step="1" value="120" inputmode="numeric">
+        <input id="bpm" type="number" min="30" max="180" step="1" value="120" inputmode="numeric">
         <div class="bpm-label">BPM</div>
       </div>
     </div>
@@ -259,7 +259,7 @@
     <div>
       <div class="tempo-row">
         <button class="step" id="bpmDown" aria-label="Slower">−</button>
-        <input type="range" id="bpmSlider" min="30" max="300" value="120">
+        <input type="range" id="bpmSlider" min="30" max="180" value="120">
         <button class="step" id="bpmUp" aria-label="Faster">+</button>
       </div>
       <div class="tap-row" style="margin-top:12px">
@@ -370,7 +370,7 @@ function effectiveBeats() {
   return state.beats;
 }
 function secondsPerBeat() { return 60.0 / state.bpm; }
-function clampBpm(n) { return Math.min(300, Math.max(30, Math.round(n))); }
+function clampBpm(n) { return Math.min(180, Math.max(30, Math.round(n))); }
 function isTyping() {
   const t = document.activeElement;
   return t && (t.tagName === "INPUT" && t.type === "number");
@@ -407,8 +407,9 @@ async function ensureAudio() {
 function applyGains() {
   if (!audioCtx) return;
   const curve = v => Math.pow(v, 1.4);
-  voiceGain.gain.setTargetAtTime(curve(state.voiceVol), audioCtx.currentTime, 0.02);
-  clickGain.gain.setTargetAtTime(curve(state.clickVol), audioCtx.currentTime, 0.02);
+  // Instant set — no ramps that make clicks sound like they breathe
+  voiceGain.gain.value = curve(state.voiceVol);
+  clickGain.gain.value = curve(state.clickVol);
 }
 
 function playBuf(name, time, dest, mul) {
@@ -416,14 +417,10 @@ function playBuf(name, time, dest, mul) {
   if (!buf) return;
   const src = audioCtx.createBufferSource();
   src.buffer = buf;
-  if (mul !== 1) {
-    const g = audioCtx.createGain();
-    g.gain.value = mul;
-    src.connect(g);
-    g.connect(dest);
-  } else {
-    src.connect(dest);
-  }
+  const g = audioCtx.createGain();
+  g.gain.value = mul;
+  src.connect(g);
+  g.connect(dest);
   src.start(time);
 }
 
@@ -434,11 +431,10 @@ function scheduleNote(time, beatIndex) {
   const speakAll = mode === "count";
   const speakOne = mode === "one" && down;
 
+  // Clicks always full/stable; voice sits on top (no ducked under-click)
+  playBuf(down ? "click_accent" : "click_beat", time, clickGain, 1);
   if (speakAll || speakOne) {
     playBuf("n" + beatNum, time, voiceGain, 1);
-    playBuf(down ? "click_accent" : "click_beat", time, clickGain, 0.28);
-  } else {
-    playBuf(down ? "click_accent" : "click_beat", time, clickGain, 1);
   }
 
   const sub = state.subdiv;
